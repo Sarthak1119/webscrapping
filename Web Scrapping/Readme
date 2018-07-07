@@ -1,0 +1,5 @@
+Download Anaconda
+Install Spyder
+Install Scrapy framework using anaconda---> conda install -c anaconda scrapy
+set your working directory
+save your projects in that directory
