@@ -7,23 +7,22 @@ Created on Mon Jun 25 10:38:07 2018
 
 import scrapy
 import pymysql
-import time
-#import multiprocessing as mp
-#import threading
+
+
 
 class HotelInformation(scrapy.Spider):
-    inittime=time.time()
-    print(inittime)
+    #inittime=time.time()
+    #print(inittime)
+    name="hotels"
 
     custom_settings={
-            'DNSCACHE_ENABLED':'False',
             'DOWNLOAD_DELAY':'0.05',
             'CONCURRENT_REQUESTS':'50',
-            'CONCURRENT_REQUESTS_PER_DOMAIN':'14',
-            #'LOG_ENABLED':'False'
+            'CONCURRENT_REQUESTS_PER_DOMAIN':'10',
+            #'LOG_ENABLED':'True'
             }
 
-    name="hotels"
+    
     city_name=input("Enter City: ")
     city_name.lower().strip()
     filename="Hotels in %s"%city_name
@@ -35,6 +34,7 @@ class HotelInformation(scrapy.Spider):
         url=str(r[0]) 
         id_city=str(r[1])
         start_urls=[url]
+ 
     
     
     cur.close()
@@ -48,45 +48,27 @@ class HotelInformation(scrapy.Spider):
             yield response.follow(href,self.hotels_name)
               
         for href in response.css('div.pageNumbers a::attr(href)'):
-            #threading.Thread(target=self.parse,args=(response.follow(href),)).start()
             yield response.follow(href,self.parse)
     
-        exetime=time.time()
-        print(exetime)
+        #exetime=time.time()
+        #print(exetime)
     
         
     def hotels_name(self,response):
-        #text_rev=[]
+        amenities=[]
             
         def extract_name(query):
             add=self.conn.cursor()
-            # add.execute('INSERT INTO hotels_desc(name,city_id) values(%s,%s) ',(str(response.xpath(query).extract_first()),self.id_city))
             self.hotelname=str(response.xpath(query).extract_first())
             add.execute('INSERT INTO hotels_desc(name,city_id) SELECT * FROM (SELECT %s, %s) AS tmp WHERE NOT EXISTS( SELECT name, city_id from hotels_desc WHERE name=%s and city_id=%s)',(str(response.xpath(query).extract_first()),self.id_city,str(response.xpath(query).extract_first()),self.id_city))
             add.close()
             self.conn.commit()
-            #with open(self.filename,'a') as f:
-             #   f.write(response.xpath(query).extract_first()+"\n")
             return response.xpath(query).extract_first()
         def extract_url(query):
             rev=self.conn.cursor()
             rev.execute('update hotels_desc set review_summary=%s WHERE name=%s and city_id=%s',(str(response.xpath(query).extract_first()),self.hotelname,self.id_city))
-            #with open("review_summary",'w') as u:
-             #   u.write(str(response.xpath(query).extract_first())+"\n")
             rev.close()
             return response.xpath(query).extract_first()
-    
-        def extract_review(query):
-            return response.xpath(query).extract_first()
-            '''item=str(response.xpath(query).extract_first())
-            seen=set(text_rev)
-            if item not in seen:
-                seen.add(item)
-                text_rev.append(item)
-            for i in text_rev:
-                with open("Reviews",'a',encoding='utf-8') as r:
-                    r.write(str(i)+"\n")
-            return text_rev'''
     
         def extract_streetadd(query):
             self.street_address=str(response.xpath(query).extract_first())
@@ -98,16 +80,41 @@ class HotelInformation(scrapy.Spider):
             loc=self.conn.cursor()
             loc.execute('update hotels_desc set location=%s where name=%s and city_id=%s',(location,self.hotelname,self.id_city))
             return response.xpath(query).extract_first()
-    
-        exetime=time.time()
-        print(exetime)
-                #extract_review('//div[@class="prw_rup prw_reviews_text_summary_hsx"]/div[@class="entry"]')
+        
+        def extract_topamenities(query):
+            for item in response.xpath(query):
+                amenities.append(item.xpath('text()').extract()[0])
+          
+            stramen=','.join(amenities)
+           
+            amen=self.conn.cursor()
+            amen.execute('SELECT id FROM hotels_desc WHERE city_id=%s and name=%s',(self.id_city,self.hotelname))
+            for r in amen:
+                h_id=r[0]
+            amen.execute('INSERT INTO HotelDetails(hotel_id,Amenities) SELECT * FROM (SELECT %s,%s) As tmp WHERE NOT EXISTS( SELECT hotel_id from HotelDetails WHERE hotel_id= %s)',(h_id,stramen,h_id))
+            amen.close()
+            self.conn.commit()
+            return amenities
+        
+        def extract_price(query):
+            pri=self.conn.cursor()
+            pri.execute('SELECT id FROM hotels_desc WHERE city_id=%s and name=%s',(self.id_city,self.hotelname))
+            for r in pri:
+                h_id=r[0]
+            pri.execute('INSERT INTO hotelprice(hotel_id,Price) SELECT * FROM (SELECT %s,%s) As tmp WHERE NOT EXISTS(SELECT hotel_id from hotelprice where hotel_id=%s)',(h_id,response.xpath(query).extract_first(),h_id))
+            pri.close()
+            self.conn.commit()
+            return response.xpath(query).extract_first() 
+        #exetime=time.time()
+       # print(exetime)
+                
         yield{
                 'Name':extract_name('.//div[@class="ui_column is-12-tablet is-10-mobile hotelDescription"]/h1[@id="HEADING"]/text()'),
                 'review_summary':extract_url('.//div[@class="prw_rup prw_common_bubble_rating rating"]/span/@alt'),
-                'review':extract_review('.//div[@class="entry"]/p[@class="partial_entry"]/text()'),
                 'street':extract_streetadd('.//span[@class="detail"]/span[@class="street-address"]/text()'),
-                'extendedadd':extract_extnd('.//span[@class="detail"]/span[@class="extended-address"]/text()')
+                'extendedadd':extract_extnd('.//span[@class="detail"]/span[@class="extended-address"]/text()'),
+                'TopAmenities':extract_topamenities('//*[@id="taplc_hotel_detail_overview_cards_0"]/div/div[2]/div/div[2]/div[@class="detailListItem"]'),
+                'Price':extract_price('//*[@id="ABOUT_TAB"]/div[2]/div[1]/div[2]/div[2]/div[1]/div[2]/div[@class="textitem"]/text()')
                 }
 
 
